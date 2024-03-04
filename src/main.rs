@@ -1,5 +1,45 @@
 use bevy::prelude::*;
 
+// Plugin from bevy tutorial
+pub struct HelloPlugin;
+
+impl Plugin for HelloPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(Startup, add_people)
+            .add_systems(Update, (hello_world, (greet_people, update_people).chain()));
+    }
+}
+#[derive(Component)]
+struct Person;
+
+#[derive(Component)]
+struct Name(String);
+
+fn add_people(mut commands: Commands) {
+    commands.spawn((Person, Name("Manos Koumantakis".to_string())));
+    commands.spawn((Person, Name("Myrto Karampesini-Matska".to_string())));
+    commands.spawn((Person, Name("Thodoris Chalimas".to_string())));
+}
+
+fn hello_world() {
+    println!("hello world!");
+}
+
+fn greet_people(query: Query<&Name, With<Person>>) {
+    for name in &query {
+        println!("hello {}!", name.0);
+    }
+}
+
+fn update_people(mut query: Query<&mut Name, With<Person>>) {
+    for mut name in &mut query {
+        if name.0 == "Manos Koumantakis" {
+            name.0 = "Manos Koumandakis".to_string();
+            break;
+        }
+    }
+}
+
 // Floor component
 #[derive(Component)]
 struct Floor;
@@ -68,9 +108,5 @@ fn apply_gravity(mut query: Query<(&Player, &mut Transform)>) {
 }
 
 fn main() {
-    App::new()
-        .add_plugins(DefaultPlugins)
-        .add_systems(Startup, setup)
-        .add_systems(Update, (player_movement, apply_gravity))
-        .run();
+    App::new().add_plugins((DefaultPlugins, HelloPlugin)).run();
 }
