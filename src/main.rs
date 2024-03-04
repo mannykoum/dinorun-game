@@ -1,4 +1,4 @@
-use bevy::prelude::*;
+use bevy::{core_pipeline::clear_color::ClearColorConfig, prelude::*};
 
 // Plugin from bevy tutorial
 pub struct HelloPlugin;
@@ -57,9 +57,14 @@ struct Player {
     on_ground: bool,
 }
 
-fn setup(mut commands: Commands) {
+fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     // Setup your game here (camera, player, etc.)
-    commands.spawn(Camera2dBundle::default());
+    commands.spawn(Camera2dBundle {
+        camera_2d: Camera2d {
+            clear_color: ClearColorConfig::Custom(Color::rgb_u8(186 / 255, 255 / 255, 201 / 255)),
+        },
+        ..default()
+    });
 
     // Floor entity
     commands
@@ -75,14 +80,16 @@ fn setup(mut commands: Commands) {
         .insert(Floor);
 
     // Player entity
+    let texture = asset_server.load("sprite1.png");
     commands
         .spawn(SpriteBundle {
             sprite: Sprite {
                 color: Color::rgb(0.7, 0.7, 0.7),
-                custom_size: Some(Vec2::new(30.0, 60.0)),
-                ..Default::default()
+                custom_size: Some(Vec2::new(100.0, 100.0)),
+                ..default()
             },
-            ..Default::default()
+            texture,
+            ..default()
         })
         .insert(Player { on_ground: false });
 }
@@ -115,5 +122,22 @@ fn apply_gravity(mut query: Query<(&Player, &mut Transform)>) {
 }
 
 fn main() {
-    App::new().add_plugins((DefaultPlugins, HelloPlugin)).run();
+    App::new()
+        .add_plugins(
+            DefaultPlugins
+                .set(ImagePlugin::default_nearest())
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        title: "Platformer".to_string(),
+                        resolution: (640.0, 480.0).into(),
+                        resizable: false,
+                        ..default()
+                    }),
+                    ..default()
+                })
+                .build(),
+        )
+        .add_systems(Startup, setup)
+        .add_systems(Update, player_movement)
+        .run();
 }
