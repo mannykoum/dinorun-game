@@ -12,3 +12,6 @@ Cargo.lock
 
 # MSVC Windows builds of rustc generate these, which store debugging information
 *.pdb
+
+# Windows security adds these when downloading from untrusted sources like piskel
+**/*Zone.Identifier
