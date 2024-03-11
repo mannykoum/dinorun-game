@@ -1,51 +1,9 @@
-use bevy::{core_pipeline::clear_color::ClearColorConfig, prelude::*};
+use bevy::input::keyboard::*;
+use bevy::prelude::*;
 
-// Plugin from bevy tutorial
-pub struct HelloPlugin;
-
-impl Plugin for HelloPlugin {
-    fn build(&self, app: &mut App) {
-        app.insert_resource(GreetTimer(Timer::from_seconds(2.0, TimerMode::Repeating)))
-            .add_systems(Startup, add_people)
-            .add_systems(Update, (greet_people, update_people).chain());
-    }
-}
-
-#[derive(Component)]
-struct Person;
-
-#[derive(Component)]
-struct Name(String);
-
-fn add_people(mut commands: Commands) {
-    commands.spawn((Person, Name("Manos Koumantakis".to_string())));
-    commands.spawn((Person, Name("Myrto Karampesini-Matska".to_string())));
-    commands.spawn((Person, Name("Thodoris Chalimas".to_string())));
-}
-
-fn hello_world() {
-    println!("hello world!");
-}
-
-#[derive(Resource)]
-struct GreetTimer(Timer);
+#[derive(Component, Deref, DerefMut)]
+struct AnimationTimer(Timer);
 // Res and ResMut provide read and write access to resources respectively
-fn greet_people(time: Res<Time>, mut timer: ResMut<GreetTimer>, query: Query<&Name, With<Person>>) {
-    if timer.0.tick(time.delta()).just_finished() {
-        for name in &query {
-            println!("hello {}!", name.0);
-        }
-    }
-}
-
-fn update_people(mut query: Query<&mut Name, With<Person>>) {
-    for mut name in &mut query {
-        if name.0 == "Manos Koumantakis" {
-            name.0 = "Manos Koumandakis".to_string();
-            break;
-        }
-    }
-}
 
 // Floor component
 #[derive(Component)]
@@ -57,56 +15,91 @@ struct Player {
     on_ground: bool,
 }
 
-fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
+// Animation indices
+#[derive(Component)]
+struct AnimationIndices {
+    first: usize,
+    last: usize,
+}
+
+// system to animate the player sprite
+fn animate_sprite(
+    time: Res<Time>,
+    mut query: Query<(&AnimationIndices, &mut AnimationTimer, &mut TextureAtlas)>,
+) {
+    for (indices, mut timer, mut atlas) in &mut query {
+        timer.tick(time.delta());
+        if timer.just_finished() {
+            atlas.index = if atlas.index == indices.last {
+                indices.first
+            } else {
+                atlas.index + 1
+            };
+        }
+    }
+}
+
+fn setup(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
+) {
     // Setup your game here (camera, player, etc.)
     commands.spawn(Camera2dBundle {
-        camera_2d: Camera2d {
-            clear_color: ClearColorConfig::Custom(Color::rgb_u8(186 / 255, 255 / 255, 201 / 255)),
-        },
+        camera_2d: Camera2d::default(), // setup 2d camera
         ..default()
     });
 
-    // Floor entity
-    commands
-        .spawn(SpriteBundle {
-            sprite: Sprite {
-                color: Color::rgb(0.3, 0.3, 0.3),
-                custom_size: Some(Vec2::new(800.0, 20.0)),
-                ..Default::default()
-            },
-            transform: Transform::from_translation(Vec3::new(0.0, -300.0, 0.0)),
-            ..Default::default()
-        })
-        .insert(Floor);
-
-    // Player entity
-    let texture = asset_server.load("sprite1.png");
+    // Floor entity (ground) animation
+    let texture = asset_server.load("background-sunset/ground.png");
     commands
         .spawn(SpriteBundle {
             sprite: Sprite {
                 color: Color::rgb(0.7, 0.7, 0.7),
-                custom_size: Some(Vec2::new(100.0, 100.0)),
+                custom_size: Some(Vec2::new(640.0, 100.0)),
                 ..default()
             },
             texture,
             ..default()
         })
-        .insert(Player { on_ground: false });
+        .insert(Floor);
+
+    // Player entity from a spritesheet
+    // The spritesheet is a 4x5 grid of 16x16 sprites
+    let layout = TextureAtlasLayout::from_grid(Vec2::new(16.0, 16.0), 4, 5, None, None);
+    let texture = asset_server.load("player.png");
+    let texture_atlas_layout = texture_atlas_layouts.add(layout);
+
+    let walk_animation_indices = AnimationIndices { first: 1, last: 12 };
+    commands.spawn((
+        SpriteSheetBundle {
+            texture,
+            atlas: TextureAtlas {
+                layout: texture_atlas_layout,
+                index: walk_animation_indices.first,
+            },
+            transform: Transform::from_scale(Vec3::splat(4.0)),
+            ..default()
+        },
+        walk_animation_indices,
+        AnimationTimer(Timer::from_seconds(0.1, TimerMode::Repeating)),
+        Player { on_ground: true },
+    ));
 }
 
 fn player_movement(
-    keyboard_input: Res<Input<KeyCode>>,
+    keyboard_input: ButtonInput<KeyCode>,
     mut query: Query<(&Player, &mut Transform)>,
 ) {
     for (_, mut transform) in query.iter_mut() {
-        if keyboard_input.pressed(KeyCode::Up) {
+        if keyboard_input.pressed(KeyCode::ArrowUp) {
             // Jump but only if the player is on the ground
             if transform.translation.y <= -260.0 {
                 transform.translation.y += 102.0; // Move up
             }
-        } else if keyboard_input.pressed(KeyCode::Left) {
+        } else if keyboard_input.pressed(KeyCode::ArrowLeft) {
             transform.translation.x -= 2.0; // Move left
-        } else if keyboard_input.pressed(KeyCode::Right) {
+        } else if keyboard_input.pressed(KeyCode::ArrowRight) {
             transform.translation.x += 2.0; // Move right
         }
     }
@@ -138,6 +131,6 @@ fn main() {
                 .build(),
         )
         .add_systems(Startup, setup)
-        .add_systems(Update, player_movement)
+        .add_systems(Update, (animate_sprite))
         .run();
 }
