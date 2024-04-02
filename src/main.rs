@@ -1,5 +1,9 @@
 use bevy::input::keyboard::*;
 use bevy::prelude::*;
+use bevy_parallax::{
+    CreateParallaxEvent, LayerData, LayerRepeat, LayerSpeed, ParallaxCameraComponent,
+    ParallaxMoveEvent, ParallaxPlugin, RepeatStrategy,
+};
 
 #[derive(Component, Deref, DerefMut)]
 struct AnimationTimer(Timer);
@@ -22,17 +26,11 @@ struct AnimationIndices {
     last: usize,
 }
 
-// Scrolling background component
-#[derive(Component)]
-struct ScrollingBackground {
-    speed: f32,
-    width: f32,
-}
-
-// system to animate the player sprite
+// system to animate the player sprite and move player entity to the right
 fn animate_sprite(
     time: Res<Time>,
     mut query: Query<(&AnimationIndices, &mut AnimationTimer, &mut TextureAtlas)>,
+    mut player_query: Query<(&Player, &mut Transform)>,
 ) {
     for (indices, mut timer, mut atlas) in &mut query {
         timer.tick(time.delta());
@@ -44,91 +42,99 @@ fn animate_sprite(
             };
         }
     }
+
+    for (_, mut transform) in &mut player_query.iter_mut() {
+        transform.translation.x += 1.0;
+    }
 }
 
-// system to scroll the background
-fn scroll_background_system(
-    time: Res<Time>,
-    mut query: Query<(Entity, &mut Transform, &ScrollingBackground), Without<Camera>>,
+// system to continuously move the parallax layers by sending a ParallaxMoveEvent
+// knowing that there is only one camera in the scene
+pub fn move_camera_system(
+    camera_query: Query<Entity, With<Camera>>,
+    mut move_event_writer: EventWriter<ParallaxMoveEvent>,
 ) {
-    let mut leftmost_x = f32::INFINITY;
-    let mut leftmost_entity = None;
-
-    // Identify the leftmost background entity and its position
-    for (entity, transform, _) in query.iter_mut() {
-        if transform.translation.x < leftmost_x {
-            leftmost_x = transform.translation.x;
-            leftmost_entity = Some(entity);
-        }
-    }
-
-    if let Some(entity) = leftmost_entity {
-        // Now that we have the leftmost entity, we can calculate its new position outside the borrow
-        if let Ok((mut transform, background, floor)) = query.get_mut(entity) {
-            if transform. + background.width / 2.0 <= -400.0 {
-                // This assumes there are exactly 2 backgrounds and both are always visible
-                transform.translation.x += 2.0 * background.width;
-            }
-        }
-    }
-
-    // Apply horizontal movement to all backgrounds
-    for (_, mut transform, background) in query.iter_mut() {
-        transform.translation.x += background.speed * time.delta_seconds();
-    }
+    let camera = camera_query.get_single().unwrap();
+    move_event_writer.send(ParallaxMoveEvent {
+        camera_move_speed: Vec2::new(1.0, 0.0),
+        camera,
+    });
 }
 
 fn setup(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
+    mut create_parallax: EventWriter<CreateParallaxEvent>,
 ) {
-    let scale = 4.0;
+    let scale = Vec2::new(4.0, 4.0);
     let floor_speed = 1.0;
     let background_width = 288.0;
 
     // Setup your game here (camera, player, etc.)
-    commands.spawn(Camera2dBundle {
-        camera_2d: Camera2d::default(), // setup 2d camera
-        ..default()
-    });
+    let camera = commands
+        .spawn(Camera2dBundle {
+            camera_2d: Camera2d::default(), // setup 2d camera
+            ..default()
+        })
+        .insert(ParallaxCameraComponent::default())
+        .id();
 
-    // Floor entity (ground) animation
-    // Spawn backgrounds side by side
-    let texture = asset_server.load("background-sunset/ground.png");
-    for i in 0..2 {
-        // Use 2 for a basic setup, increase if needed for wider views
-        commands
-            .spawn(SpriteBundle {
-                texture: texture.clone().into(),
-                transform: Transform::from_translation(Vec3::new(
-                    i as f32 * background_width * scale,
-                    0.0,
-                    0.0,
-                )),
-                ..Default::default()
-            })
-            .insert(ScrollingBackground {
-                speed: -100.0, // Adjust the speed as needed
-                width: background_width,
-            })
-            .insert(Floor);
-    }
-    // commands
-    //     .spawn(SpriteBundle {
-    //         sprite: Sprite {
-    //             color: Color::rgb(0.7, 0.7, 0.7),
-    //             custom_size: Some(Vec2::new(288.0 * scale, 96.0 * scale)),
-    //             ..default()
-    //         },
-    //         texture,
-    //         ..default()
-    //     })
-    //     .insert(Floor)
-    //     .insert(ScrollingBackground {
-    //         speed: floor_speed,
-    //         width: 288.0 * scale,
-    //     });
+    let parallax_layers = vec![
+        LayerData {
+            path: "background-sunset/foreground.png".to_string(),
+            speed: LayerSpeed::Horizontal(0.1),
+            repeat: LayerRepeat::horizontally(RepeatStrategy::Same),
+            tile_size: Vec2::new(288.0, 192.0),
+            cols: 1,
+            rows: 1,
+            scale,
+            z: 2.0,
+            position: Vec2::new(0.0, scale.y * -32.0),
+            ..Default::default()
+        },
+        LayerData {
+            path: "background-sunset/ground.png".to_string(),
+            speed: LayerSpeed::Horizontal(0.4),
+            repeat: LayerRepeat::horizontally(RepeatStrategy::Same),
+            tile_size: Vec2::new(288.0, 192.0),
+            cols: 1,
+            rows: 1,
+            scale,
+            z: 1.0,
+            position: Vec2::new(0.0, scale.y * -32.0),
+            ..Default::default()
+        },
+        LayerData {
+            path: "background-sunset/mountains.png".to_string(),
+            speed: LayerSpeed::Horizontal(0.9),
+            repeat: LayerRepeat::horizontally(RepeatStrategy::Same),
+            tile_size: Vec2::new(288.0, 192.0),
+            cols: 1,
+            rows: 1,
+            scale,
+            z: 0.4,
+            position: Vec2::new(0.0, scale.y * -32.0),
+            ..Default::default()
+        },
+        LayerData {
+            path: "background-sunset/sky.png".to_string(),
+            speed: LayerSpeed::Horizontal(1.0),
+            repeat: LayerRepeat::horizontally(RepeatStrategy::Same),
+            tile_size: Vec2::new(288.0, 192.0),
+            cols: 1,
+            rows: 1,
+            scale,
+            z: 0.0,
+            position: Vec2::new(0.0, scale.y * -32.0),
+            ..Default::default()
+        },
+    ];
+
+    create_parallax.send(CreateParallaxEvent {
+        layers_data: parallax_layers,
+        camera: camera,
+    });
 
     // Player entity from a spritesheet
     // The spritesheet is a 4x5 grid of 16x16 sprites
@@ -137,20 +143,26 @@ fn setup(
     let texture_atlas_layout = texture_atlas_layouts.add(layout);
 
     let walk_animation_indices = AnimationIndices { first: 1, last: 12 };
-    commands.spawn((
-        SpriteSheetBundle {
-            texture,
-            atlas: TextureAtlas {
-                layout: texture_atlas_layout,
-                index: walk_animation_indices.first,
+    let player_sprite = commands
+        .spawn((
+            SpriteSheetBundle {
+                texture,
+                atlas: TextureAtlas {
+                    layout: texture_atlas_layout,
+                    index: walk_animation_indices.first,
+                },
+                transform: Transform {
+                    translation: Vec3::new(0.0, scale.y * -8.0, 1.5),
+                    scale: Vec3::splat(4.0),
+                    ..default()
+                },
+                ..default()
             },
-            transform: Transform::from_scale(Vec3::splat(4.0)),
-            ..default()
-        },
-        walk_animation_indices,
-        AnimationTimer(Timer::from_seconds(0.1, TimerMode::Repeating)),
-        Player { on_ground: true },
-    ));
+            walk_animation_indices,
+            AnimationTimer(Timer::from_seconds(0.1, TimerMode::Repeating)),
+            Player { on_ground: true },
+        ))
+        .id();
 }
 
 fn player_movement(
@@ -181,6 +193,8 @@ fn apply_gravity(mut query: Query<(&Player, &mut Transform)>) {
 }
 
 fn main() {
+    let scale = Vec2::new(4.0, 4.0);
+
     App::new()
         .add_plugins(
             DefaultPlugins
@@ -188,7 +202,7 @@ fn main() {
                 .set(WindowPlugin {
                     primary_window: Some(Window {
                         title: "Platformer".to_string(),
-                        resolution: (640.0, 480.0).into(),
+                        resolution: (640.0, 320.0).into(),
                         resizable: false,
                         ..default()
                     }),
@@ -196,15 +210,8 @@ fn main() {
                 })
                 .build(),
         )
+        .add_plugins(ParallaxPlugin)
         .add_systems(Startup, setup)
-        .add_systems(
-            Update,
-            (
-                animate_sprite,
-                scroll_background_system,
-                player_movement,
-                apply_gravity,
-            ),
-        )
+        .add_systems(Update, (animate_sprite, move_camera_system))
         .run();
 }
