@@ -5,6 +5,13 @@ use bevy_parallax::{
     ParallaxMoveEvent, ParallaxPlugin, RepeatStrategy,
 };
 
+enum PlayerState {
+    Idle,
+    Walking,
+    Jumping,
+    Running,
+}
+
 #[derive(Component, Deref, DerefMut)]
 struct AnimationTimer(Timer);
 // Res and ResMut provide read and write access to resources respectively
@@ -17,6 +24,7 @@ struct Floor;
 #[derive(Component)]
 struct Player {
     on_ground: bool,
+    state: PlayerState,
 }
 
 // Animation indices
@@ -160,7 +168,10 @@ fn setup(
             },
             walk_animation_indices,
             AnimationTimer(Timer::from_seconds(0.1, TimerMode::Repeating)),
-            Player { on_ground: true },
+            Player {
+                on_ground: true,
+                state: PlayerState::Walking,
+            },
         ))
         .id();
 }
